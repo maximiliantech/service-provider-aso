@@ -3,4 +3,4 @@ kind: AzureServiceOperator
 metadata:
   name: test-mcp
 spec:
-  foo: bar
+  version: v1.0.0

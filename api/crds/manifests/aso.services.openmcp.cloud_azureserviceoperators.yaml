@@ -49,10 +49,11 @@ spec:
           spec:
             description: spec defines the desired state of AzureServiceOperator
             properties:
-              foo:
-                description: foo is an example field of AzureServiceOperator. Edit
-                  azureserviceoperator_types.go to remove/update
+              version:
+                description: Version is the version of the Azure Service Operator
                 type: string
+            required:
+            - version
             type: object
           status:
             description: status defines the observed state of AzureServiceOperator
