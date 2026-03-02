@@ -1,0 +1,6 @@
+apiVersion: aso.services.openmcp.cloud/v1alpha1
+kind: AzureServiceOperator
+metadata:
+  name: test-mcp
+spec:
+  foo: bar

@@ -33,8 +33,8 @@ func TestMain(m *testing.M) {
 		},
 		ServiceProviders: []providers.ServiceProviderSetup{
 			{
-				Name:               "foo",
-				Image:              "controller:latest",
+				Name:               "azureserviceoperator",
+				Image:              "ghcr.io/openmcp-project/images/service-provider-aso:0.0.1",
 				LoadImageToCluster: true,
 			},
 		},

@@ -19,6 +19,7 @@ package main
 import (
 	"context"
 	"crypto/tls"
+	"fmt"
 	"os"
 	"time"
 
@@ -37,7 +38,6 @@ import (
 	"github.com/openmcp-project/openmcp-operator/lib/utils"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	"github.com/openmcp-project/service-provider-template/api/crds"
 	rbacv1 "k8s.io/api/rbac/v1"
 	apiextensionv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -51,10 +51,12 @@ import (
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
-	spruntime "github.com/openmcp-project/service-provider-template/pkg/runtime"
+	"github.com/openmcp-project/service-provider-aso/api/crds"
 
-	{{.KindLower}}sv1alpha1 "github.com/openmcp-project/service-provider-template/api/v1alpha1"
-	"github.com/openmcp-project/service-provider-template/internal/controller"
+	spruntime "github.com/openmcp-project/service-provider-aso/pkg/runtime"
+
+	azureserviceoperatorsv1alpha1 "github.com/openmcp-project/service-provider-aso/api/v1alpha1"
+	"github.com/openmcp-project/service-provider-aso/internal/controller"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -62,9 +64,6 @@ var (
 	platformScheme   = runtime.NewScheme()
 	onboardingScheme = runtime.NewScheme()
 	mcpScheme        = runtime.NewScheme()
-{{- if .WithWorkloadCluster }}
-	workloadScheme   = runtime.NewScheme()
-{{- end }}
 	setupLog         = ctrl.Log.WithName("setup")
 )
 
@@ -73,15 +72,12 @@ func init() {
 	initPlatformScheme()
 	initOnboardingScheme()
 	initMcpScheme()
-{{- if .WithWorkloadCluster }}
-	initWorkloadScheme()
-{{- end }}
 }
 
 func initPlatformScheme() {
 	utilruntime.Must(clientgoscheme.AddToScheme(platformScheme))
 	utilruntime.Must(apiextensionv1.AddToScheme(platformScheme))
-	utilruntime.Must({{.KindLower}}sv1alpha1.AddToScheme(platformScheme))
+	utilruntime.Must(azureserviceoperatorsv1alpha1.AddToScheme(platformScheme))
 	utilruntime.Must(clustersv1alpha1.AddToScheme(platformScheme))
 	utilruntime.Must(providerv1alpha1.AddToScheme(platformScheme))
 }
@@ -89,19 +85,13 @@ func initPlatformScheme() {
 func initOnboardingScheme() {
 	utilruntime.Must(clientgoscheme.AddToScheme(onboardingScheme))
 	utilruntime.Must(apiextensionv1.AddToScheme(onboardingScheme))
-	utilruntime.Must({{.KindLower}}sv1alpha1.AddToScheme(onboardingScheme))
+	utilruntime.Must(azureserviceoperatorsv1alpha1.AddToScheme(onboardingScheme))
 }
 
 func initMcpScheme() {
 	utilruntime.Must(clientgoscheme.AddToScheme(mcpScheme))
 	utilruntime.Must(apiextensionv1.AddToScheme(mcpScheme))
 }
-
-{{- if .WithWorkloadCluster }}
-func initWorkloadScheme() {
-	utilruntime.Must(clientgoscheme.AddToScheme(workloadScheme))
-}
-{{- end }}
 
 // nolint:gocyclo
 func main() {
@@ -243,7 +233,7 @@ func main() {
 		},
 	}
 	clusterAccessManager := clusteraccess.NewClusterAccessManager(platformCluster.Client(),
-		"{{.KindLower}}.{{.Group}}.services.openmcp.cloud", os.Getenv("POD_NAMESPACE"))
+		"azureserviceoperator.aso.services.openmcp.cloud", os.Getenv("POD_NAMESPACE"))
 	clusterAccessManager.WithLogger(&log).
 		WithInterval(10 * time.Second).
 		WithTimeout(30 * time.Minute)
@@ -267,9 +257,9 @@ func main() {
 		}
 
 		spGVK := metav1.GroupVersionKind{
-			Group:   {{.KindLower}}sv1alpha1.GroupVersion.Group,
-			Version: {{.KindLower}}sv1alpha1.GroupVersion.Version,
-			Kind:    "{{.Kind}}",
+			Group:   azureserviceoperatorsv1alpha1.GroupVersion.Group,
+			Version: azureserviceoperatorsv1alpha1.GroupVersion.Version,
+			Kind:    "AzureServiceOperator",
 		}
 		if err := utils.RegisterGVKsAtServiceProvider(ctx, platformCluster.Client(), providerName, spGVK); err != nil {
 			setupLog.Error(err, "Failed to register GVK at ServiceProvider")
@@ -314,44 +304,34 @@ func main() {
 		os.Exit(1)
 	}
 	providerConfigUpdates := make(chan event.GenericEvent)
-	spr := spruntime.NewSPReconciler[*{{.KindLower}}sv1alpha1.{{.Kind}}, *{{.KindLower}}sv1alpha1.ProviderConfig](
-		func() *{{.KindLower}}sv1alpha1.{{.Kind}} { return &{{.KindLower}}sv1alpha1.{{.Kind}}{} },
+	spr := spruntime.NewSPReconciler[*azureserviceoperatorsv1alpha1.AzureServiceOperator, *azureserviceoperatorsv1alpha1.ProviderConfig](
+		func() *azureserviceoperatorsv1alpha1.AzureServiceOperator {
+			return &azureserviceoperatorsv1alpha1.AzureServiceOperator{}
+		},
 	).
 		WithPlatformCluster(platformCluster).
 		WithOnboardingCluster(onboardingCluster).
-		WithServiceProviderReconciler(&controller.{{.Kind}}Reconciler{
+		WithServiceProviderReconciler(&controller.AzureServiceOperatorReconciler{
 			OnboardingCluster: onboardingCluster,
 			PlatformCluster:   platformCluster,
 			PodNamespace:      podNamespace,
 		}).
-		WithClusterAccessReconciler(clusteraccess.NewClusterAccessReconciler(platformCluster.Client(), "{{.Kind}}").
+		WithClusterAccessReconciler(clusteraccess.NewClusterAccessReconciler(platformCluster.Client(), "AzureServiceOperator").
 			WithMCPScheme(mcpScheme).
-			{{- if .WithWorkloadCluster }}
-			WithWorkloadScheme(workloadScheme).
-			{{- end }}
 			WithRetryInterval(10 * time.Second).
 			WithMCPPermissions(adminPermissions).WithMCPRoleRefs([]common.RoleRef{
 			{
 				Name: "cluster-admin",
 				Kind: "ClusterRole",
 			}}).
-			{{- if .WithWorkloadCluster }}
-			WithWorkloadPermissions(adminPermissions).WithWorkloadRoleRefs([]common.RoleRef{
-			{
-				Name: "cluster-admin",
-				Kind: "ClusterRole",
-			},
-		}))
-			{{- else }}
 			SkipWorkloadCluster(),
 		)
-			{{- end }}
-	if err := spr.SetupWithManager(mgr, "{{.KindLower}}", providerConfigUpdates); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "{{.Kind}}")
+	if err := spr.SetupWithManager(mgr, "azureserviceoperator", providerConfigUpdates); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "AzureServiceOperator")
 		os.Exit(1)
 	}
-	pcr := spruntime.NewPCReconciler(providerName, func() *{{.KindLower}}sv1alpha1.ProviderConfig {
-		return &{{.KindLower}}sv1alpha1.ProviderConfig{}
+	pcr := spruntime.NewPCReconciler(providerName, func() *azureserviceoperatorsv1alpha1.ProviderConfig {
+		return &azureserviceoperatorsv1alpha1.ProviderConfig{}
 	}).
 		WithPlatformCluster(platformCluster).
 		WithUpdateChannel(providerConfigUpdates)

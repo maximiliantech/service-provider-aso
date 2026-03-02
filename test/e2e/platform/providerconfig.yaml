@@ -1,6 +1,6 @@
-apiVersion: foo.services.openmcp.cloud/v1alpha1
+apiVersion: aso.services.openmcp.cloud/v1alpha1
 kind: ProviderConfig
 metadata:
-  name: default
+  name: azureserviceoperator
 spec:
   pollInterval: 1m
