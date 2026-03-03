@@ -23,6 +23,18 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
+const (
+	testNamespaceName      = "test-namespace"
+	testObjectName         = "test-name"
+	testObjectNameNotFound = "notfound"
+
+	testMCPName       = "mcp-name"
+	testMCPKubeconfig = "mcp-kubeconfig"
+
+	testWorkloadName       = "workload-name"
+	testWorkloadKubeconfig = "workload-kubeconfig"
+)
+
 func TestSPReconciler_Reconcile(t *testing.T) {
 	tests := []struct {
 		name string // description of this test case
@@ -37,14 +49,14 @@ func TestSPReconciler_Reconcile(t *testing.T) {
 			name: "api obj createOrUpdate -> requeue with pc poll interval",
 			apiObj: &fakeApiImpl{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test",
-					Namespace: "test",
+					Name:      testObjectName,
+					Namespace: testNamespaceName,
 				},
 			},
 			req: ctrl.Request{
 				NamespacedName: types.NamespacedName{
-					Namespace: "test",
-					Name:      "test",
+					Name:      testObjectName,
+					Namespace: testNamespaceName,
 				},
 			},
 			providerConfig: &fakeProviderConfigImpl{
@@ -59,8 +71,8 @@ func TestSPReconciler_Reconcile(t *testing.T) {
 			name: "api obj delete -> requeue with pc poll interval",
 			apiObj: &fakeApiImpl{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test",
-					Namespace: "test",
+					Name:      testObjectName,
+					Namespace: testNamespaceName,
 					DeletionTimestamp: &metav1.Time{
 						Time: time.Now(),
 					},
@@ -69,8 +81,8 @@ func TestSPReconciler_Reconcile(t *testing.T) {
 			},
 			req: ctrl.Request{
 				NamespacedName: types.NamespacedName{
-					Namespace: "test",
-					Name:      "test",
+					Name:      testObjectName,
+					Namespace: testNamespaceName,
 				},
 			},
 			providerConfig: &fakeProviderConfigImpl{
@@ -85,8 +97,8 @@ func TestSPReconciler_Reconcile(t *testing.T) {
 			name: "api obj not found -> do not requeue",
 			apiObj: &fakeApiImpl{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test",
-					Namespace: "test",
+					Name:      testObjectName,
+					Namespace: testNamespaceName,
 					DeletionTimestamp: &metav1.Time{
 						Time: time.Now(),
 					},
@@ -95,8 +107,8 @@ func TestSPReconciler_Reconcile(t *testing.T) {
 			},
 			req: ctrl.Request{
 				NamespacedName: types.NamespacedName{
-					Namespace: "test",
-					Name:      "notfound",
+					Name:      testObjectNameNotFound,
+					Namespace: testNamespaceName,
 				},
 			},
 			providerConfig: &fakeProviderConfigImpl{
@@ -109,14 +121,14 @@ func TestSPReconciler_Reconcile(t *testing.T) {
 			name: "provider config not found -> error",
 			apiObj: &fakeApiImpl{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test",
-					Namespace: "test",
+					Name:      testObjectName,
+					Namespace: testNamespaceName,
 				},
 			},
 			req: ctrl.Request{
 				NamespacedName: types.NamespacedName{
-					Namespace: "test",
-					Name:      "test",
+					Name:      testObjectName,
+					Namespace: testNamespaceName,
 				},
 			},
 			want:    ctrl.Result{},
@@ -127,19 +139,39 @@ func TestSPReconciler_Reconcile(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			onboardingCluster := createFakeCluster(t, "onboarding", tt.apiObj)
 			platformCluster := createFakeCluster(t, "platform")
-
+			mockSPR := &MockServiceProviderReconciler{}
 			r := NewSPReconciler[*fakeApiImpl, *fakeProviderConfigImpl](func() *fakeApiImpl {
 				return &fakeApiImpl{}
 			}).
 				WithOnboardingCluster(onboardingCluster).
 				WithPlatformCluster(platformCluster).
-				WithClusterAccessReconciler(FakeClusterAccessReconciler{
-					ManagedControlPlane:   createFakeCluster(t, "mcp"),
-					ManagedControlPlaneAR: &clustersv1alpha1.AccessRequest{},
-					Workload:              createFakeCluster(t, "workload"),
-					WorkloadAR:            &clustersv1alpha1.AccessRequest{},
+				WithClusterAccessReconciler(FakeClusterAccessProvider{
+					ManagedControlPlane: createFakeCluster(t, testMCPName),
+					ManagedControlPlaneAR: &clustersv1alpha1.AccessRequest{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      testMCPName,
+							Namespace: testNamespaceName,
+						},
+						Status: clustersv1alpha1.AccessRequestStatus{
+							SecretRef: &common.LocalObjectReference{
+								Name: testMCPKubeconfig,
+							},
+						},
+					},
+					Workload: createFakeCluster(t, testWorkloadName),
+					WorkloadAR: &clustersv1alpha1.AccessRequest{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      testWorkloadName,
+							Namespace: testNamespaceName,
+						},
+						Status: clustersv1alpha1.AccessRequestStatus{
+							SecretRef: &common.LocalObjectReference{
+								Name: testWorkloadKubeconfig,
+							},
+						},
+					},
 				}).
-				WithServiceProviderReconciler(fakeSPR).
+				WithServiceProviderReconciler(mockSPR).
 				WithWorkloadCluster(true)
 			if tt.providerConfig != nil {
 				r.WithProviderConfig(tt.providerConfig)
@@ -155,27 +187,49 @@ func TestSPReconciler_Reconcile(t *testing.T) {
 				t.Fatal("Reconcile() succeeded unexpectedly")
 			}
 			assert.Equal(t, tt.want, got)
+			if tt.req.Name != testObjectNameNotFound {
+				// assert that the generic reconciler delegates objects to the target reconciler as expected
+				assert.Equal(t, client.ObjectKeyFromObject(tt.apiObj), client.ObjectKeyFromObject(mockSPR.apiObj))
+				assert.Equal(t, client.ObjectKeyFromObject(tt.providerConfig), client.ObjectKeyFromObject(mockSPR.pcObj))
+				assert.Equal(t, client.ObjectKey{
+					Namespace: tt.req.Namespace,
+					Name:      testMCPKubeconfig,
+				}, mockSPR.contextObj.MCPAccessSecretKey)
+				assert.Equal(t, client.ObjectKey{
+					Namespace: tt.req.Namespace,
+					Name:      testWorkloadKubeconfig,
+				}, mockSPR.contextObj.WorkloadAccessSecretKey)
+			}
 		})
 	}
 }
 
-var _ ClusterAccessProvider = FakeClusterAccessReconciler{}
-var fakeSPR ServiceProviderReconciler[*fakeApiImpl, *fakeProviderConfigImpl] = FakeServiceProviderReconciler{}
+var _ ClusterAccessProvider = FakeClusterAccessProvider{}
+var _ ServiceProviderReconciler[*fakeApiImpl, *fakeProviderConfigImpl] = &MockServiceProviderReconciler{}
 
-type FakeServiceProviderReconciler struct {
+type MockServiceProviderReconciler struct {
+	apiObj     ServiceProviderAPI
+	pcObj      ProviderConfig
+	contextObj ClusterContext
 }
 
 // CreateOrUpdate implements [runtime.ServiceProviderReconciler].
-func (f FakeServiceProviderReconciler) CreateOrUpdate(_ context.Context, _ *fakeApiImpl, _ *fakeProviderConfigImpl, _ ClusterContext) (ctrl.Result, error) {
+func (f *MockServiceProviderReconciler) CreateOrUpdate(_ context.Context, obj *fakeApiImpl, pc *fakeProviderConfigImpl, cc ClusterContext) (ctrl.Result, error) {
+	f.apiObj = obj
+	f.pcObj = pc
+	f.contextObj = cc
 	return reconcile.Result{}, nil
 }
 
 // Delete implements [runtime.ServiceProviderReconciler].
-func (f FakeServiceProviderReconciler) Delete(_ context.Context, _ *fakeApiImpl, _ *fakeProviderConfigImpl, _ ClusterContext) (ctrl.Result, error) {
+func (f *MockServiceProviderReconciler) Delete(_ context.Context, obj *fakeApiImpl, pc *fakeProviderConfigImpl, cc ClusterContext) (ctrl.Result, error) {
+	f.apiObj = obj
+	f.pcObj = pc
+	f.contextObj = cc
 	return reconcile.Result{}, nil
 }
 
-type FakeClusterAccessReconciler struct {
+type FakeClusterAccessProvider struct {
 	ManagedControlPlane   *clusters.Cluster
 	ManagedControlPlaneAR *clustersv1alpha1.AccessRequest
 	Workload              *clusters.Cluster
@@ -183,32 +237,32 @@ type FakeClusterAccessReconciler struct {
 }
 
 // MCPAccessRequest implements [ClusterAccessProvider].
-func (f FakeClusterAccessReconciler) MCPAccessRequest(ctx context.Context, request reconcile.Request) (*clustersv1alpha1.AccessRequest, error) {
+func (f FakeClusterAccessProvider) MCPAccessRequest(ctx context.Context, request reconcile.Request) (*clustersv1alpha1.AccessRequest, error) {
 	return f.ManagedControlPlaneAR, nil
 }
 
 // MCPCluster implements [ClusterAccessProvider].
-func (f FakeClusterAccessReconciler) MCPCluster(ctx context.Context, request reconcile.Request) (*clusters.Cluster, error) {
+func (f FakeClusterAccessProvider) MCPCluster(ctx context.Context, request reconcile.Request) (*clusters.Cluster, error) {
 	return f.ManagedControlPlane, nil
 }
 
 // Reconcile implements [ClusterAccessProvider].
-func (f FakeClusterAccessReconciler) Reconcile(ctx context.Context, request reconcile.Request) (reconcile.Result, error) {
+func (f FakeClusterAccessProvider) Reconcile(ctx context.Context, request reconcile.Request) (reconcile.Result, error) {
 	return reconcile.Result{}, nil
 }
 
 // ReconcileDelete implements [ClusterAccessProvider].
-func (f FakeClusterAccessReconciler) ReconcileDelete(ctx context.Context, request reconcile.Request) (reconcile.Result, error) {
+func (f FakeClusterAccessProvider) ReconcileDelete(ctx context.Context, request reconcile.Request) (reconcile.Result, error) {
 	return reconcile.Result{}, nil
 }
 
 // WorkloadAccessRequest implements [ClusterAccessProvider].
-func (f FakeClusterAccessReconciler) WorkloadAccessRequest(ctx context.Context, request reconcile.Request) (*clustersv1alpha1.AccessRequest, error) {
+func (f FakeClusterAccessProvider) WorkloadAccessRequest(ctx context.Context, request reconcile.Request) (*clustersv1alpha1.AccessRequest, error) {
 	return f.WorkloadAR, nil
 }
 
 // WorkloadCluster implements [ClusterAccessProvider].
-func (f FakeClusterAccessReconciler) WorkloadCluster(ctx context.Context, request reconcile.Request) (*clusters.Cluster, error) {
+func (f FakeClusterAccessProvider) WorkloadCluster(ctx context.Context, request reconcile.Request) (*clusters.Cluster, error) {
 	return f.Workload, nil
 }
 

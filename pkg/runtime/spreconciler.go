@@ -39,8 +39,12 @@ type ServiceProviderReconciler[T ServiceProviderAPI, PC ProviderConfig] interfac
 type ClusterContext struct {
 	// MCPCluster is the managed control plane that belongs to the current reconcile request
 	MCPCluster *clusters.Cluster
+	// MCPAccessSecretKey provides the object key to retrieve the MCP kubeconfig secret
+	MCPAccessSecretKey client.ObjectKey
 	// WorkloadCluster is the workload cluster that belongs the current reconcile request
 	WorkloadCluster *clusters.Cluster
+	// WorkloadAccessSecretKey provides the object key to retrieve the workload cluster kubeconfig secret
+	WorkloadAccessSecretKey client.ObjectKey
 }
 
 // ServiceProviderAPI represents the end-user facing onboarding api type
@@ -324,6 +328,11 @@ func (r *SPReconciler[T, PC]) clusters(ctx context.Context, req ctrl.Request) (C
 		return clusters, res, errors.New("mcp access missing")
 	}
 	clusters.MCPCluster = mcpCluster
+	ar, err := r.clusterAccessReconciler.MCPAccessRequest(ctx, req)
+	if err != nil {
+		return clusters, ctrl.Result{}, err
+	}
+	clusters.MCPAccessSecretKey = retrieveSecretKey(ar)
 	if r.withWorkloadCluster {
 		workloadCluster, err := r.clusterAccessReconciler.WorkloadCluster(ctx, req)
 		if err != nil {
@@ -334,6 +343,11 @@ func (r *SPReconciler[T, PC]) clusters(ctx context.Context, req ctrl.Request) (C
 			return clusters, res, errors.New("workload cluster access missing")
 		}
 		clusters.WorkloadCluster = workloadCluster
+		ar, err := r.clusterAccessReconciler.WorkloadAccessRequest(ctx, req)
+		if err != nil {
+			return clusters, ctrl.Result{}, err
+		}
+		clusters.WorkloadAccessSecretKey = retrieveSecretKey(ar)
 	}
 	return clusters, res, nil
 }
@@ -374,4 +388,14 @@ func (r *SPReconciler[T, PC]) SetupWithManager(mgr ctrl.Manager, name string, pr
 		).
 		Named(name).
 		Complete(r)
+}
+
+func retrieveSecretKey(ar *clustersv1alpha1.AccessRequest) client.ObjectKey {
+	if ar.Status.SecretRef == nil {
+		return client.ObjectKey{}
+	}
+	return client.ObjectKey{
+		Namespace: ar.Namespace,
+		Name:      ar.Status.SecretRef.Name,
+	}
 }
