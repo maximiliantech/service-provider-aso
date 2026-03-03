@@ -49,10 +49,16 @@ spec:
           spec:
             description: spec defines the desired state of AzureServiceOperator
             properties:
+              crdPattern:
+                description: CRDPattern is the pattern to install the set of CRDs.
+                items:
+                  type: string
+                type: array
               version:
                 description: Version is the version of the Azure Service Operator
                 type: string
             required:
+            - crdPattern
             - version
             type: object
           status:

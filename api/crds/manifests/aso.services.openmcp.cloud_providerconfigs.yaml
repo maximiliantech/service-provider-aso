@@ -41,6 +41,9 @@ spec:
           spec:
             description: spec defines the desired state of ProviderConfig
             properties:
+              helmChartLocation:
+                description: HelmChartLocation set the URL where to get the Helm chart.
+                type: string
               pollInterval:
                 default: 1m
                 description: foo is an example field of ProviderConfig. Edit providerconfig_types.go

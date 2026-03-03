@@ -37,6 +37,9 @@ type ProviderConfigSpec struct {
 	// +kubebuilder:default:="1m"
 	// +kubebuilder:validation:Format=duration
 	PollInterval *metav1.Duration `json:"pollInterval,omitempty"`
+
+	// HelmChartLocation set the URL where to get the Helm chart.
+	HelmChartLocation string `json:"helmChartLocation,omitempty"`
 }
 
 // ProviderConfigStatus defines the observed state of ProviderConfig.

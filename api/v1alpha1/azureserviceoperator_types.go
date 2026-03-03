@@ -24,6 +24,9 @@ import (
 type AzureServiceOperatorSpec struct {
 	// Version is the version of the Azure Service Operator
 	Version string `json:"version"`
+
+	// CRDPattern is the pattern to install the set of CRDs.
+	CRDPattern []string `json:"crdPattern"`
 }
 
 // AzureServiceOperatorStatus defines the observed state of AzureServiceOperator.
