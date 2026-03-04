@@ -40,7 +40,7 @@ const (
 	// HelmReleaseName is the name of the Flux' HelmRelease object created by the controller.
 	HelmReleaseName = "azure-service-operator"
 
-	// HelmRepoistoryName is the name of the Flux' HelmRepository object created by the controller.
+	// HelmRepositoryName is the name of the Flux' HelmRepository object created by the controller.
 	HelmRepositoryName = "azure-service-operator"
 
 	// ASOSystemNamespace is the default namespace on the target MCP cluster to install the Azure Servie Operator.
@@ -74,12 +74,12 @@ func (r *AzureServiceOperatorReconciler) CreateOrUpdate(ctx context.Context, svc
 
 	// 1. Create Flux OCIRepository resource
 	if err := r.createOrUpdateHelmRepository(ctx, svcobj, providerConfig, tenantNamespace); err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to create HelmRepository resource on Platform cluster", err)
+		return ctrl.Result{}, fmt.Errorf("failed to create HelmRepository resource on Platform cluster: %w", err)
 	}
 
 	// 2. Create Flux HelmRelease resource
 	if err = r.createOrUpdateHelmRelease(ctx, svcobj, providerConfig, clusters.MCPAccessSecretKey, tenantNamespace); err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to create HelmRelease resource on Platform cluster", err)
+		return ctrl.Result{}, fmt.Errorf("failed to create HelmRelease resource on Platform cluster: %w", err)
 	}
 
 	l.Info("Done reconciling AzureServiceOperator resource", "name", svcobj.Name)
@@ -100,7 +100,7 @@ func (r *AzureServiceOperatorReconciler) Delete(ctx context.Context, obj *apiv1a
 
 	var objects []client.Object
 	// 1. Delete HelmRelease object from Platform cluster
-	helmRepository := createHelmRepository(providerConfig, obj.Spec.Version, tenantNamespace)
+	helmRepository := createHelmRepository(providerConfig, tenantNamespace)
 	objects = append(objects, helmRepository)
 
 	// 2. Delete HelmRepository object from Platform cluster
@@ -129,8 +129,8 @@ func (r *AzureServiceOperatorReconciler) Delete(ctx context.Context, obj *apiv1a
 	return ctrl.Result{}, nil
 }
 
-func (r *AzureServiceOperatorReconciler) createOrUpdateHelmRepository(ctx context.Context, svcobj *apiv1alpha1.AzureServiceOperator, providerConfig *apiv1alpha1.ProviderConfig, namespace string) error {
-	helmRepository := createHelmRepository(providerConfig, svcobj.Spec.Version, namespace)
+func (r *AzureServiceOperatorReconciler) createOrUpdateHelmRepository(ctx context.Context, _ *apiv1alpha1.AzureServiceOperator, providerConfig *apiv1alpha1.ProviderConfig, namespace string) error {
+	helmRepository := createHelmRepository(providerConfig, namespace)
 	managedObj := &sourcev1.HelmRepository{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      helmRepository.Name,
@@ -149,7 +149,7 @@ func (r *AzureServiceOperatorReconciler) createOrUpdateHelmRepository(ctx contex
 	return nil
 }
 
-func createHelmRepository(providerConfig *apiv1alpha1.ProviderConfig, version, namespace string) *sourcev1.HelmRepository {
+func createHelmRepository(providerConfig *apiv1alpha1.ProviderConfig, namespace string) *sourcev1.HelmRepository {
 	return &sourcev1.HelmRepository{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      HelmRepositoryName,
@@ -182,7 +182,7 @@ func (r *AzureServiceOperatorReconciler) createOrUpdateHelmRelease(ctx context.C
 	return nil
 }
 
-func createHelmRelease(providerConfig *apiv1alpha1.ProviderConfig, mcpAccessSecret client.ObjectKey, version, namespace string) *helmv2.HelmRelease {
+func createHelmRelease(_ *apiv1alpha1.ProviderConfig, mcpAccessSecret client.ObjectKey, version, namespace string) *helmv2.HelmRelease {
 	return &helmv2.HelmRelease{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      HelmReleaseName,
