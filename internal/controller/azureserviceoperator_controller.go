@@ -21,21 +21,33 @@ import (
 	"fmt"
 	"time"
 
-	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
-
 	helmv2 "github.com/fluxcd/helm-controller/api/v2"
+	"github.com/fluxcd/pkg/apis/meta"
 	sourcev1 "github.com/fluxcd/source-controller/api/v1"
 	libutils "github.com/openmcp-project/openmcp-operator/lib/utils"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	"github.com/openmcp-project/controller-utils/pkg/clusters"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	apiv1alpha1 "github.com/openmcp-project/service-provider-aso/api/v1alpha1"
 	spruntime "github.com/openmcp-project/service-provider-aso/pkg/runtime"
+)
+
+const (
+	// HelmReleaseName is the name of the Flux' HelmRelease object created by the controller.
+	HelmReleaseName = "azure-service-operator"
+
+	// HelmRepoistoryName is the name of the Flux' HelmRepository object created by the controller.
+	HelmRepositoryName = "azure-service-operator"
+
+	// ASOSystemNamespace is the default namespace on the target MCP cluster to install the Azure Servie Operator.
+	ASOSystemNamespace = "azureserviceoperator-system"
+
+	// HelmChartName is the name of the Helm chart
+	HelmChartName = "azure-service-operator"
 )
 
 // AzureServiceOperatorReconciler reconciles a AzureServiceOperator object
@@ -53,8 +65,6 @@ func (r *AzureServiceOperatorReconciler) CreateOrUpdate(ctx context.Context, svc
 	l := logf.FromContext(ctx)
 	spruntime.StatusProgressing(svcobj, "Reconciling", "Reconcile in progress")
 
-	// get tenant namespace
-
 	tenantNamespace, err := libutils.StableMCPNamespace(svcobj.Name, svcobj.Namespace)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to determine stable namespace for OCM instance: %w", err)
@@ -68,14 +78,12 @@ func (r *AzureServiceOperatorReconciler) CreateOrUpdate(ctx context.Context, svc
 	}
 
 	// 2. Create Flux HelmRelease resource
-
-	if _, err := ctrl.CreateOrUpdate(ctx, clusters.MCPCluster.Client(), managedObj, func() error {
-		managedObj.Spec = fooCRD().Spec
-		return nil
-	}); err != nil {
-		l.Error(err, "createOrUpdate failed")
-		return ctrl.Result{}, err
+	if err = r.createOrUpdateHelmRelease(ctx, svcobj, providerConfig, clusters.MCPAccessSecretKey, tenantNamespace); err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to create HelmRelease resource on Platform cluster", err)
 	}
+
+	l.Info("Done reconciling AzureServiceOperator resource", "name", svcobj.Name)
+
 	spruntime.StatusReady(svcobj)
 	return ctrl.Result{}, nil
 }
@@ -84,14 +92,11 @@ func (r *AzureServiceOperatorReconciler) CreateOrUpdate(ctx context.Context, svc
 func (r *AzureServiceOperatorReconciler) Delete(ctx context.Context, obj *apiv1alpha1.AzureServiceOperator, _ *apiv1alpha1.ProviderConfig, clusters spruntime.ClusterContext) (ctrl.Result, error) {
 	l := logf.FromContext(ctx)
 	spruntime.StatusTerminating(obj)
-	managedObj := fooCRD()
-	if err := clusters.MCPCluster.Client().Delete(ctx, managedObj); client.IgnoreNotFound(err) != nil {
-		l.Error(err, "delete object failed")
-		return ctrl.Result{}, err
-	}
-	if err := clusters.MCPCluster.Client().Get(ctx, client.ObjectKeyFromObject(managedObj), managedObj); err != nil {
-		return reconcile.Result{}, client.IgnoreNotFound(err)
-	}
+
+	// 1. Delete HelmRelease object from Platform cluster
+
+	// 2. Delete HelmRepository object from Platform cluster
+
 	// object still exists
 	return ctrl.Result{
 		RequeueAfter: time.Second * 10,
@@ -121,7 +126,7 @@ func (r *AzureServiceOperatorReconciler) createOrUpdateHelmRepository(ctx contex
 func createHelmRepository(providerConfig *apiv1alpha1.ProviderConfig, version, namespace string) *sourcev1.HelmRepository {
 	return &sourcev1.HelmRepository{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "azure-service-operator",
+			Name:      HelmRepositoryName,
 			Namespace: namespace,
 		},
 		Spec: sourcev1.HelmRepositorySpec{
@@ -131,8 +136,8 @@ func createHelmRepository(providerConfig *apiv1alpha1.ProviderConfig, version, n
 	}
 }
 
-func (r *AzureServiceOperatorReconciler) createOrUpdateHelmRelease(ctx context.Context, svcobj *apiv1alpha1.AzureServiceOperator, providerConfig *apiv1alpha1.ProviderConfig, namespace string) error {
-	helmRelease := createHelmRelease(providerConfig, svcobj.Spec.Version, namespace)
+func (r *AzureServiceOperatorReconciler) createOrUpdateHelmRelease(ctx context.Context, svcobj *apiv1alpha1.AzureServiceOperator, providerConfig *apiv1alpha1.ProviderConfig, mcpAccessSecret client.ObjectKey, namespace string) error {
+	helmRelease := createHelmRelease(providerConfig, mcpAccessSecret, svcobj.Spec.Version, namespace)
 	managedObj := &helmv2.HelmRelease{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      helmRelease.Name,
@@ -140,7 +145,7 @@ func (r *AzureServiceOperatorReconciler) createOrUpdateHelmRelease(ctx context.C
 		},
 	}
 	l := logf.FromContext(ctx)
-	l.Info("creating HelmRepository", "object", helmRelease)
+	l.Info("creating HelmRelease", "object", helmRelease)
 	if _, err := ctrl.CreateOrUpdate(ctx, r.PlatformCluster.Client(), managedObj, func() error {
 		managedObj.Spec = helmRelease.Spec
 		return nil
@@ -151,65 +156,32 @@ func (r *AzureServiceOperatorReconciler) createOrUpdateHelmRelease(ctx context.C
 	return nil
 }
 
-func createHelmRelease(providerConfig *apiv1alpha1.ProviderConfig, version, namespace string) *helmv2.HelmRelease {
+func createHelmRelease(providerConfig *apiv1alpha1.ProviderConfig, mcpAccessSecret client.ObjectKey, version, namespace string) *helmv2.HelmRelease {
 	return &helmv2.HelmRelease{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "azure-service-operator",
+			Name:      HelmReleaseName,
 			Namespace: namespace,
 		},
 		Spec: helmv2.HelmReleaseSpec{
 			Interval: metav1.Duration{Duration: time.Minute},
 			Chart: &helmv2.HelmChartTemplate{
-				Spec: &helmv2.HelmChartTemplateSpec{
-					Chart:   "",
+				Spec: helmv2.HelmChartTemplateSpec{
+					Chart:   HelmChartName,
 					Version: version,
 					SourceRef: helmv2.CrossNamespaceObjectReference{
 						Kind: "HelmRepository",
-						Name: "azure-service-operator", // HelmRepository.ObjectMeta.Name from referenced Object
+						Name: HelmRepositoryName, // HelmRepository.ObjectMeta.Name from referenced Object
 					},
 				},
 			},
-			// set reference to HelmRepository
-			// set version to install
-			// set kubeconfig to install helm chart on remote cluster
-			KubeConfig: nil, // MCP kubeconfig
-		},
-	}
-}
-
-func fooCRD() *apiextensionsv1.CustomResourceDefinition {
-	return &apiextensionsv1.CustomResourceDefinition{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: "foos.example.domain",
-		},
-		Spec: apiextensionsv1.CustomResourceDefinitionSpec{
-			Group: "example.domain",
-			Versions: []apiextensionsv1.CustomResourceDefinitionVersion{
-				{
-					Name:    "v1alpha1",
-					Served:  true,
-					Storage: true,
-					Schema: &apiextensionsv1.CustomResourceValidation{
-						OpenAPIV3Schema: &apiextensionsv1.JSONSchemaProps{
-							Type: "object",
-							Properties: map[string]apiextensionsv1.JSONSchemaProps{
-								"spec": {
-									Type: "object",
-									Properties: map[string]apiextensionsv1.JSONSchemaProps{
-										"foo": {Type: "string"},
-									},
-								},
-							},
-						},
-					},
+			ReleaseName:      HelmReleaseName,
+			TargetNamespace:  ASOSystemNamespace,
+			StorageNamespace: ASOSystemNamespace,
+			KubeConfig: &meta.KubeConfigReference{
+				SecretRef: &meta.SecretKeyReference{
+					Name: mcpAccessSecret.Name,
+					Key:  "kubeconfig",
 				},
-			},
-			Scope: apiextensionsv1.NamespaceScoped,
-			Names: apiextensionsv1.CustomResourceDefinitionNames{
-				Plural:   "foos",
-				Singular: "foo",
-				Kind:     "Foo",
-				ListKind: "FooList",
 			},
 		},
 	}
