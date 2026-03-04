@@ -89,18 +89,44 @@ func (r *AzureServiceOperatorReconciler) CreateOrUpdate(ctx context.Context, svc
 }
 
 // Delete is called on every delete event
-func (r *AzureServiceOperatorReconciler) Delete(ctx context.Context, obj *apiv1alpha1.AzureServiceOperator, _ *apiv1alpha1.ProviderConfig, clusters spruntime.ClusterContext) (ctrl.Result, error) {
-	l := logf.FromContext(ctx)
+func (r *AzureServiceOperatorReconciler) Delete(ctx context.Context, obj *apiv1alpha1.AzureServiceOperator, providerConfig *apiv1alpha1.ProviderConfig, clusters spruntime.ClusterContext) (ctrl.Result, error) {
+	_ = logf.FromContext(ctx)
 	spruntime.StatusTerminating(obj)
 
+	tenantNamespace, err := libutils.StableMCPNamespace(obj.Name, obj.Namespace)
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to determine stable namespace for OCM instance: %w", err)
+	}
+
+	var objects []client.Object
 	// 1. Delete HelmRelease object from Platform cluster
+	helmRepository := createHelmRepository(providerConfig, obj.Spec.Version, tenantNamespace)
+	objects = append(objects, helmRepository)
 
 	// 2. Delete HelmRepository object from Platform cluster
 
-	// object still exists
-	return ctrl.Result{
-		RequeueAfter: time.Second * 10,
-	}, nil
+	helmRelase := createHelmRelease(providerConfig, clusters.MCPAccessSecretKey, obj.Spec.Version, tenantNamespace)
+	objects = append(objects, helmRelase)
+
+	objectsStillExist := false
+	for _, managedObj := range objects {
+		if err := r.PlatformCluster.Client().Delete(ctx, managedObj); client.IgnoreNotFound(err) != nil {
+			spruntime.StatusFailed(obj, err.Error())
+			return ctrl.Result{}, fmt.Errorf("delete object failed: %w", err)
+		}
+		if err := r.PlatformCluster.Client().Get(ctx, client.ObjectKeyFromObject(managedObj), managedObj); err != nil {
+			objectsStillExist = true
+		}
+	}
+
+	if objectsStillExist {
+		return ctrl.Result{
+			RequeueAfter: time.Second * 10,
+		}, nil
+	}
+
+	spruntime.StatusReady(obj)
+	return ctrl.Result{}, nil
 }
 
 func (r *AzureServiceOperatorReconciler) createOrUpdateHelmRepository(ctx context.Context, svcobj *apiv1alpha1.AzureServiceOperator, providerConfig *apiv1alpha1.ProviderConfig, namespace string) error {
