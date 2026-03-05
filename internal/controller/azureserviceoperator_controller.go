@@ -98,7 +98,7 @@ func (r *AzureServiceOperatorReconciler) Delete(ctx context.Context, obj *apiv1a
 		return ctrl.Result{}, fmt.Errorf("failed to determine stable namespace for OCM instance: %w", err)
 	}
 
-	var objects []client.Object
+	var objects []client.Object // nolint:prealloc
 	// 1. Delete HelmRelease object from Platform cluster
 	helmRepository := createHelmRepository(providerConfig, tenantNamespace)
 	objects = append(objects, helmRepository)
@@ -183,6 +183,7 @@ func (r *AzureServiceOperatorReconciler) createOrUpdateHelmRelease(ctx context.C
 }
 
 func createHelmRelease(_ *apiv1alpha1.ProviderConfig, mcpAccessSecret client.ObjectKey, version, namespace string) *helmv2.HelmRelease {
+	remediationStrategy := helmv2.RollbackRemediationStrategy
 	return &helmv2.HelmRelease{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      HelmReleaseName,
@@ -203,6 +204,21 @@ func createHelmRelease(_ *apiv1alpha1.ProviderConfig, mcpAccessSecret client.Obj
 			ReleaseName:      HelmReleaseName,
 			TargetNamespace:  ASOSystemNamespace,
 			StorageNamespace: ASOSystemNamespace,
+			Install: &helmv2.Install{
+				CRDs:            helmv2.Create,
+				CreateNamespace: true,
+				Remediation: &helmv2.InstallRemediation{
+					Retries: -1,
+				},
+			},
+			Upgrade: &helmv2.Upgrade{
+				CRDs:          helmv2.CreateReplace,
+				CleanupOnFail: true,
+				Remediation: &helmv2.UpgradeRemediation{
+					Retries:  -2,
+					Strategy: &remediationStrategy,
+				},
+			},
 			KubeConfig: &meta.KubeConfigReference{
 				SecretRef: &meta.SecretKeyReference{
 					Name: mcpAccessSecret.Name,
