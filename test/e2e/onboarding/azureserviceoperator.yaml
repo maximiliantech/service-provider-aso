@@ -3,4 +3,6 @@ kind: AzureServiceOperator
 metadata:
   name: test-mcp
 spec:
-  version: v1.0.0
+  version: 2.18.0
+  crdPattern:
+    - "*"

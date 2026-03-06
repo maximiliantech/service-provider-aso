@@ -4,3 +4,4 @@ metadata:
   name: azureserviceoperator
 spec:
   pollInterval: 1m
+  helmChartLocation: https://raw.githubusercontent.com/Azure/azure-service-operator/main/v2/charts
