@@ -2,48 +2,38 @@
 
 # service-provider-aso
 
-## About this project
+## 📖 About this project
 
-A template for building @openmcp-project Service Providers
+An @openmcp-project Service Provider for Azure Service Operator (ASO).
 
-## Requirements and Setup
+**⚠️ Experimental Status**: This service provider is in experimental state and might not be feature complete. Use with caution in production environments.
 
-1. Create a new repository based on this template.
-2. Execute the template to create a new `ServiceProvider`.
-3. Test your `ServiceProvider`.
+## 🏗️ Requirements and Setup
 
-The template includes a basic code generation command that lets you create a `ServiceProvider` for your Go module, API kind and group.
-You can also choose to add sample code to get a fully functional `ServiceProvider`.
+### Building the Image
 
-For a complete usage overview with the default settings, run:
+To build the Docker image, use the following command:
 
 ```shell
-go run ./cmd/template -h
+task build:img:build
 ```
 
-Then execute the template, for example:
-
-```shell
-go run ./cmd/template -module github.com/yourorg/yourrepo -kind YourKind -group yourgroup
-```
-
-Running End-to-End tests:
+### Running End-to-End Tests
 
 ```shell
 task test-e2e
 ```
 
-## CLI Flags
+## 🧑‍💻 Development and Debugging
 
-### Template Generator Flags
+The repository includes a [.vscode](.vscode) folder with a [launch.json](.vscode/launch.json) containing two launch configurations for debugging:
 
-The template generator (`cmd/template`) supports the following flags:
+1. **Debug Provider**: Debug the service provider itself during development
+2. **Debug E2E Tests**: Debug the end-to-end tests - this is particularly useful as you can stop at any point in time and play around with the OpenMCP setup that was created
 
-- `-module`: Go module path (default: `github.com/openmcp-project/service-provider-aso`)
-- `-kind`: GVK kind name (default: `FooService`)
-- `-group`: GVK group prefix, will be suffixed with `services.openmcp.cloud` (default: `foo`)
-- `-v`: Generate with sample code (default: `false`)
-- `-w`: Generate a service provider that reconciles its `DomainServiceAPI` on the [WorkloadCluster](https://openmcp-project.github.io/docs/about/design/service-provider#deployment-model) (default: `false`)
+The E2E debugging configuration allows you to pause test execution and inspect or interact with the running OpenMCP environment, making it invaluable for troubleshooting and understanding the system behavior.
+
+## ⚙️ CLI Flags
 
 ### Service Provider Runtime Flags
 
@@ -60,18 +50,18 @@ The generated service provider supports the following runtime flags:
 
 For a complete list of available flags, run the generated binary with `-h` or `--help`.
 
-## Support, Feedback, Contributing
+## ❤️ Support, Feedback, Contributing
 
 This project is open to feature requests/suggestions, bug reports etc. via [GitHub issues](https://github.com/openmcp-project/service-provider-aso/issues). Contribution and feedback are encouraged and always welcome. For more information about how to contribute, the project structure, as well as additional contribution information, see our [Contribution Guidelines](CONTRIBUTING.md).
 
-## Security / Disclosure
+## 🔐 Security / Disclosure
 
 If you find any bug that may be a security problem, please follow our instructions at [in our security policy](https://github.com/openmcp-project/service-provider-aso/security/policy) on how to report it. Please do not create GitHub issues for security-related doubts or problems.
 
-## Code of Conduct
+## 🤝 Code of Conduct
 
 We as members, contributors, and leaders pledge to make participation in our community a harassment-free experience for everyone. By participating in this project, you agree to abide by its [Code of Conduct](https://github.com/SAP/.github/blob/main/CODE_OF_CONDUCT.md) at all times.
 
-## Licensing
+## 📋 Licensing
 
 Copyright 2025 SAP SE or an SAP affiliate company and service-provider-aso contributors. Please see our [LICENSE](LICENSE) for copyright and license information. Detailed information including third-party components and their licensing/copyright information is available [via the REUSE tool](https://api.reuse.software/info/github.com/openmcp-project/service-provider-aso).
