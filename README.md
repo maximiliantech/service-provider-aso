@@ -4,9 +4,18 @@
 
 ## 📖 About this project
 
-An @openmcp-project Service Provider for Azure Service Operator (ASO).
+An [OpenMCP](https://openmcp-project.github.io/) Service Provider that enables platform owners to offer [Azure Service Operator (ASO)](https://azure.github.io/azure-service-operator/) as a service to end users.
 
 **⚠️ Experimental Status**: This service provider is in experimental state and might not be feature complete. Use with caution in production environments.
+
+### ✨ What it provides
+
+This provider brings two core APIs to your OpenMCP platform:
+
+1. **`AzureServiceOperator`** (end-user facing) - Allows end users to request managed ASO instances, enabling them to provision and manage Azure resources through Kubernetes manifests
+2. **`ProviderConfig`** (platform owner facing) - Enables platform owners to configure how ASO is offered, including image locations, version constraints, and environment-specific settings
+
+The provider's reconciler manages the full lifecycle of ASO installations, deploying them into managed control planes or workload clusters based on your platform configuration. For more details on service providers, see the [OpenMCP documentation](https://openmcp-project.github.io/docs/developers/service-providers).
 
 ## 🏗️ Requirements and Setup
 
